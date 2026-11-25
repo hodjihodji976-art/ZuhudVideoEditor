@@ -1,0 +1,57 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Temukan proyek
+        id: loc
+        run: |
+          if [ -f ZuhudVideoEditor.zip ]; then
+            mkdir -p _unzipped
+            unzip -q -o ZuhudVideoEditor.zip -d _unzipped
+            ROOT=_unzipped
+          else
+            ROOT=.
+          fi
+          SETTINGS=$(find "$ROOT" -name settings.gradle.kts -not -path "./.git/*" | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle.kts tidak ditemukan. Pastikan struktur folder proyek benar."
+            exit 1
+          fi
+          DIR=$(dirname "$SETTINGS")
+          echo "Proyek ditemukan di: $DIR"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Siapkan Android SDK
+        run: |
+          SDKM=$(find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          if [ -n "$SDKM" ]; then
+            yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+            "$SDKM" "platforms;android-36" "build-tools;35.0.0" > /dev/null 2>&1 || true
+          fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.13
+
+      - name: Build debug APK
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: gradle assembleDebug --stacktrace
+
+      - name: Unggah APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZuhudVideoEditor-debug-apk
+          path: ${{ steps.loc.outputs.dir }}/app/build/outputs/apk/debug/*.apk
